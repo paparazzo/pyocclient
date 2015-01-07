@@ -260,7 +260,7 @@ class Client():
         path = self.__normalize_path(path)
         res = self.__session.get(self.__webdav_url + path)
         if res.status_code == 200:
-            return res.content
+            return res.content.decode()
         return False
 
     def get_file(self, remote_path, local_file = None):
@@ -429,7 +429,7 @@ class Client():
 
         headers = {}
         if kwargs.get('keep_mtime', True):
-            headers['X-OC-MTIME'] = stat_result.st_mtime
+            headers['X-OC-MTIME'] = str(stat_result.st_mtime)
 
         if size == 0:
             return self.__make_dav_request(

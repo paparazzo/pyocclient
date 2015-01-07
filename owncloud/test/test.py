@@ -451,8 +451,8 @@ class TestFileAccess(unittest.TestCase):
         with self.assertRaises(owncloud.ResponseError) as e:
             self.client.share_file_with_link(self.test_root + 'unexist.txt')
 
-        self.assertEquals(e.exception.status_code, 200)
-        self.assertEquals(e.exception.msg, "wrong path, file/folder doesn't exist.")
+        self.assertEqual(e.exception.status_code, 200)
+        self.assertEqual(e.exception.msg, "wrong path, file/folder doesn't exist.")
 
     @data_provider(files)
     def test_share_with_user(self, file_name):
@@ -510,8 +510,8 @@ class TestFileAccess(unittest.TestCase):
         with self.assertRaises(owncloud.ResponseError) as e:
             self.client.get_shares(self.test_root + 'does_not_exist')
 
-        self.assertEquals(e.exception.status_code, 200)
-        self.assertEquals(e.exception.msg, "share doesn't exist")
+        self.assertEqual(e.exception.status_code, 200)
+        self.assertEqual(e.exception.msg, "share doesn't exist")
 
     @data_provider(files)
     def test_get_shares(self, file_name):
@@ -528,8 +528,8 @@ class TestFileAccess(unittest.TestCase):
             shares = self.client.get_shares(self.test_root + file_name, subfiles=True)
         self.assertIsNone(shares)
 
-        self.assertEquals(e.exception.status_code, 200)
-        self.assertEquals(e.exception.msg, "not a directory")
+        self.assertEqual(e.exception.status_code, 200)
+        self.assertEqual(e.exception.msg, "not a directory")
 
 
         shares = self.client.get_shares(self.test_root, reshares=True, subfiles=True)

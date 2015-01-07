@@ -1,0 +1,7 @@
+#gnureadline==6.3.3
+#ipdb==0.8
+#ipython==2.3.1
+requests==2.5.1
+unittest-data-provider==1.0.1
+#wsgiref==0.1.2
+six==1.9.0
