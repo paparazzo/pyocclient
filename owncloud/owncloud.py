@@ -13,19 +13,33 @@ import datetime
 import time
 import requests
 import xml.etree.ElementTree as ET
+from xml.etree.ElementTree import ParseError
 import os
 import six
 from six.moves import urllib
 
-class ResponseError(Exception):
-    def __init__(self, res):
-        # TODO: how to retrieve the error message ?
-        if type(res) is int:
-            code = res
-        else:
-            code = res.status_code
-        Exception.__init__(self, "HTTP error: %i" % code)
+class ResponseError(Exception): 
+
+    def __init__(self, code, msg=None):
         self.status_code = code
+        self.msg = msg
+        if msg is not None:
+            try:
+                tree = ET.fromstring(msg)
+            except ParseError:
+                # msg is not xml, thus assuming pure string with error message
+                pass
+            else:
+                res = tree.find('meta')
+                if res is not None:
+                    self.msg = res.find('message').text
+                else:
+                    res = tree.find('{http://sabredav.org/ns}message')
+                    if res is not None:
+                        self.msg = res.text
+
+        Exception.__init__(self, "HTTP error: %i, reason: %s" % (code,
+                                                                 self.msg))
 
 class PublicShare():
     """Public share information"""
@@ -64,11 +78,19 @@ class FileInfo():
         self.attributes = attributes or {}
 
     def get_name(self):
-        """Returns the base name of the file (without path)
+        """Returns the base name of the file without path
 
         :returns: name of the file
         """
         return self.name
+
+    def get_path(self):
+        """Returns the full path to the file without name and without
+        trailing slash
+
+        :returns: path to the file
+        """
+        return os.path.dirname(self.path)
 
     def get_size(self):
         """Returns the size of the file
@@ -185,7 +207,7 @@ class Client():
             return
         self.__session.close()
         self.__session = None
-        raise ResponseError(res)
+        raise ResponseError(res.status_code, res.content)
 
     def logout(self):
         """Log out the authenticated user and close the session.
@@ -481,7 +503,7 @@ class Client():
                 )
         if res.status_code == 200:
             return res
-        raise ResponseError(res)
+        raise ResponseError(res.status_code, res.content)
 
     def update_share(self, share_id, **kwargs):
         """Updates a given share
@@ -493,7 +515,6 @@ class Client():
         :returns: True if the operation succeeded, False otherwise
         :raises: ResponseError in case an HTTP error status was returned
         """
-
         perms = kwargs.get('perms', None)
         password = kwargs.get('password', None)
         public_upload = kwargs.get('public_upload', None)
@@ -520,7 +541,7 @@ class Client():
                 )
         if res.status_code == 200:
             return True
-        raise ResponseError(res)
+        raise ResponseError(res.status_code, res.content)
 
     def move(self, remote_path_source, remote_path_target):
         """Deletes a remote file or directory
@@ -568,7 +589,7 @@ class Client():
         )
         if res.status_code == 200:
             tree = ET.fromstring(res.content)
-            self.__check_ocs_status(tree)
+            self.__check_ocs_status(tree, res)
             data_el = tree.find('data')
             return PublicShare(
                 int(data_el.find('id').text),
@@ -576,7 +597,7 @@ class Client():
                 data_el.find('url').text,
                 data_el.find('token').text
             )
-        raise ResponseError(res)
+        raise ResponseError(res.status_code, res.content)
 
     def is_shared(self, path):
         """Checks whether a path is already shared
@@ -592,9 +613,11 @@ class Client():
             if result:
                 return (len(result) > 0)
         except ResponseError as e:
-            if e.status_code != 404:
-                raise e
-            return False
+            if e.status_code == 200 and e.msg == "share doesn't exist":
+                return False
+            else:
+                raise ResponseError(e.status_code, e.msg)
+
         return False
 
     def get_shares(self, path='', **kwargs):
@@ -631,7 +654,7 @@ class Client():
                 )
         if res.status_code == 200:
             tree = ET.fromstring(res.content)
-            self.__check_ocs_status(tree)
+            self.__check_ocs_status(tree, res)
             shares = []
             for element in tree.find('data').iter('element'):
                 share_attr = {}
@@ -642,7 +665,7 @@ class Client():
                 shares.append(share_attr)
             if len(shares) > 0:
                 return shares
-        raise ResponseError(res)
+        raise ResponseError(res.status_code, res.content)
 
     def share_file_with_user(self, path, user, **kwargs):
         """Shares a remote file with specified user
@@ -677,14 +700,14 @@ class Client():
         )
         if res.status_code == 200:
             tree = ET.fromstring(res.content)
-            self.__check_ocs_status(tree)
+            self.__check_ocs_status(tree, res)
             data_el = tree.find('data')
             return UserShare(
                 int(data_el.find('id').text),
                 path,
                 perms
             )
-        raise ResponseError(res)
+        raise ResponseError(res.status_code, res.content)
 
     def get_config(self):
         """Returns ownCloud config information
@@ -700,7 +723,7 @@ class Client():
                 )
         if res.status_code == 200:
             tree = ET.fromstring(res.content)
-            self.__check_ocs_status(tree)
+            self.__check_ocs_status(tree, res)
             values = []
 
             element = tree.find('data')
@@ -712,7 +735,7 @@ class Client():
                 return zip(keys, values)
             else:
                 return None
-        raise ResponseError(res)
+        raise ResponseError(res.status_code, res.content)
 
     def get_attribute(self, app = None, key = None):
         """Returns an application attribute
@@ -736,7 +759,7 @@ class Client():
                 )
         if res.status_code == 200:
             tree = ET.fromstring(res.content)
-            self.__check_ocs_status(tree)
+            self.__check_ocs_status(tree, res)
             values = []
             for element in tree.find('data').iter('element'):
                 app_text = element.find('app').text
@@ -753,7 +776,7 @@ class Client():
             if len(values) == 0 and key is not None:
                 return None
             return values
-        raise ResponseError(res)
+        raise ResponseError(res.status_code, res.content)
 
     def set_attribute(self, app, key, value):
         """Sets an application attribute
@@ -773,7 +796,7 @@ class Client():
                 )
         if res.status_code == 200:
             tree = ET.fromstring(res.content)
-            self.__check_ocs_status(tree)
+            self.__check_ocs_status(tree, res)
             return True
         raise ResponseError(res)
 
@@ -793,9 +816,9 @@ class Client():
                 )
         if res.status_code == 200:
             tree = ET.fromstring(res.content)
-            self.__check_ocs_status(tree)
+            self.__check_ocs_status(tree, res)
             return True
-        raise ResponseError(res)
+        raise ResponseError(res.status_code, res.content)
 
     @staticmethod
     def __normalize_path(path):
@@ -822,7 +845,7 @@ class Client():
         return s
 
     @staticmethod
-    def __check_ocs_status(tree):
+    def __check_ocs_status(tree, response):
         """Checks the status code of an OCS request
 
         :param tree: response parsed with elementtree
@@ -830,7 +853,7 @@ class Client():
         """
         code_el = tree.find('meta/statuscode')
         if code_el is not None and code_el.text != '100':
-            raise ResponseError(int(code_el.text))
+            raise ResponseError(response.status_code, response.text)
 
     def __make_ocs_request(self, method, service, action, **kwargs):
         """Makes a OCS API request
@@ -853,7 +876,6 @@ class Client():
             attributes['headers'] = {}
 
         attributes['headers']['OCS-APIREQUEST'] = 'true'
-
         res = self.__session.request(method, self.url + path, **attributes)
         return res
 
@@ -871,7 +893,6 @@ class Client():
             print('DAV request: %s %s' % (method, path))
             if kwargs.get('headers'):
                 print('Headers: ', kwargs.get('headers'))
-
         path = self.__normalize_path(path)
         res = self.__session.request(
             method,
@@ -884,7 +905,8 @@ class Client():
             return self.__parse_dav_response(res)
         if res.status_code == 204 or res.status_code == 201:
             return True
-        raise ResponseError(res)
+
+        raise ResponseError(res.status_code, res.content)
 
     def __parse_dav_response(self, res):
         """Parses the DAV responses from a multi-status response
